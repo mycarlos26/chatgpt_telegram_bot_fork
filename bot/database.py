@@ -1,17 +1,24 @@
 from typing import Optional, Any
 
-import pymongo
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 import uuid
 from datetime import datetime
-
+import requests
+import json
 import config
+import openai
 
+# setup openai
+openai.api_key = config.openai_api_key
+if config.openai_api_base is not None:
+    openai.api_base = config.openai_api_base
 
 class Database:
     def __init__(self):
-        self.client = pymongo.MongoClient(config.mongodb_uri)
+        self.client = MongoClient(config.mongodb_uri_atlas, server_api=ServerApi('1'))
         self.db = self.client["chatgpt_telegram_bot"]
-
+        self.thread_id = ""
         self.user_collection = self.db["user"]
         self.dialog_collection = self.db["dialog"]
 
@@ -32,6 +39,9 @@ class Database:
         first_name: str = "",
         last_name: str = "",
     ):
+        if not self.check_if_user_exists(user_id):
+            empty_thread_id = Database.create_thread()
+            self.thread_id  = empty_thread_id
         user_dict = {
             "_id": user_id,
             "chat_id": chat_id,
@@ -46,7 +56,7 @@ class Database:
             "current_dialog_id": None,
             "current_chat_mode": "assistant",
             "current_model": config.models["available_text_models"][0],
-
+            "thread_id" :empty_thread_id,
             "n_used_tokens": {},
 
             "n_generated_images": 0,
@@ -126,3 +136,81 @@ class Database:
             {"_id": dialog_id, "user_id": user_id},
             {"$set": {"messages": dialog_messages}}
         )
+
+    @staticmethod
+    def create_thread():
+        url = "https://api.openai.com/v1/threads"       
+        # Agrega los encabezados necesarios para tu solicitud, como el token de la API.
+        headers = {
+            "Authorization": f"Bearer {config.openai_api_key}",
+            "Content-Type": "application/json",
+            'OpenAI-Beta': 'assistants=v1',
+        }       
+        # Realiza la petición POST al servidor. En este ejemplo no enviamos datos adicionales (data={}),
+        response =  requests.post(url, headers=headers)
+        
+        # Comprobamos que la respuesta tiene el estatus 200 que implica éxtio
+        if response.ok:
+            # Convertimos la respuesta en formato JSON a un diccionario de Python
+            response_data = response.json()
+            # Accedemos al campo 'id' y lo retornamos
+            return response_data.get('id')
+        else:
+            # Manejamos la respuesta en caso de error
+            print(f"Error en la solicitud: {response.status_code}")
+            return None
+
+    
+    @staticmethod
+    def create_message(thread_id, content):
+        url = f"https://api.openai.com/v1/threads/{thread_id}/messages"
+        
+        headers = {
+            "Authorization": f"Bearer {config.openai_api_key}",
+            "Content-Type": "application/json",
+            'OpenAI-Beta': 'assistants=v1',
+        }
+        
+        # La carga útil que se va a enviar con la solicitud, incluyendo "role" y "content".
+        payload = {
+            "role": "user",
+            "content": content
+        }
+        
+        # Realiza la petición POST
+        response =  requests.post(url, headers=headers, json=payload)
+        
+        if response.ok:
+            # Convertimos la respuesta en formato JSON a un diccionario de Python
+            response_data = response.json()
+            # Retornamos toda la respuesta o el valor específico que necesites
+            return response_data
+        else:
+            # Manejamos la respuesta en caso de error
+            print(f"Error al crear el mensaje: {response.status_code}")
+            return None
+    @staticmethod
+    def create_run(thread_id):
+        url = f"https://api.openai.com/v1/threads/{thread_id}/runs"
+        
+        headers = {
+            "Authorization": f"Bearer {config.openai_api_key}",
+            "Content-Type": "application/json",
+            'OpenAI-Beta': 'assistants=v1',
+        }
+        payload = {
+            "assistant_id": config.assistant_id
+        }
+        
+        # Realiza la petición POST
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.ok:
+            # Convertimos la respuesta en formato JSON a un diccionario de Python
+            response_data = response.json()
+            # Retornamos toda la respuesta o el valor específico que necesites
+            return response_data.get('id')
+        else:
+            # Manejamos la respuesta en caso de error
+            print(f"Error al crear el run: {response.status_code}")
+            return None

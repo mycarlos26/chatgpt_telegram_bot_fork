@@ -34,7 +34,7 @@ class ChatGPT:
         while answer is None:
             try:
                 if self.model in {"gpt-3.5-turbo-16k", "gpt-3.5-turbo", "gpt-4", "gpt-4-1106-preview"}:
-                    messages = self._generate_prompt_messages(message, dialog_messages, chat_mode)
+                    messages = self._generate_prompt_messages(message, dialog_messages, chat_mode)                   
                     r = await openai.ChatCompletion.acreate(
                         model=self.model,
                         messages=messages,

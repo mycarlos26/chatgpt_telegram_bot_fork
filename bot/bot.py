@@ -6,6 +6,7 @@ import html
 import json
 from datetime import datetime
 import openai
+import aiohttp
 
 import telegram
 from telegram import (
@@ -203,6 +204,12 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
     if chat_mode == "artist":
         await generate_image_handle(update, context, message=message)
         return
+    if chat_mode == "Jonathan_Goodman_Bot":
+        thread_id = db.get_user_attribute(user_id, "thread_id")
+        db.create_message(thread_id,_message)
+        run_id = db.create_run(thread_id)
+        await assistan_handle(update, context,thread_id,run_id)
+        return
 
     async def message_handle_fn():
         # new dialog timeout
@@ -385,6 +392,64 @@ async def generate_image_handle(update: Update, context: CallbackContext, messag
         await update.message.chat.send_action(action="upload_photo")
         await update.message.reply_photo(image_url, parse_mode=ParseMode.HTML)
 
+async def assistan_handle(update: Update, context: CallbackContext, thread_id:str,run_id:str):
+    
+    # send placeholder message to user
+    placeholder_message = await update.message.reply_text("...")
+    user_id = update.message.from_user.id
+    chat_mode = db.get_user_attribute(user_id, "current_chat_mode")
+    parse_mode = {
+                "html": ParseMode.HTML,
+                "markdown": ParseMode.MARKDOWN
+            }[config.chat_modes[chat_mode]["parse_mode"]]
+    
+    if await is_previous_message_not_answered_yet(update, context): return
+
+   
+    db.set_user_attribute(user_id, "last_interaction", datetime.now())
+    headers = {
+            "Authorization": f"Bearer {config.openai_api_key}",
+            "Content-Type": "application/json",
+            'OpenAI-Beta': 'assistants=v1',
+        }
+    try:
+        async with aiohttp.ClientSession() as session:
+            get_run_steps_url = f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}/steps"
+            while True:
+                async with session.get(get_run_steps_url, headers=headers) as response:
+                    steps = await response.json()
+                    last_step_status = steps["data"][-1]["status"]
+                    # Comprobar si el último paso está 'completed' o no 'in_progress'
+                    if last_step_status != "in_progress":
+                        async with aiohttp.ClientSession() as session:
+                             get_messages_url = f"https://api.openai.com/v1/threads/{thread_id}/messages"
+                             async with session.get(get_messages_url, headers=headers) as response:
+                                if response.status == 200:
+                                    messages = await response.json()
+                                    for message in messages["data"]:
+                                        # Filtrar mensajes que tengan el rol de 'assistant'
+                                        if message["role"] == "assistant":
+                                             # En caso de tener varios elementos en 'content', iterar sobre cada uno
+                                              for content_piece in message["content"]:
+                                                   if content_piece["type"] == "text":
+                                                        # Aquí tienes el texto enviado por el 'assistant'
+                                                        assistant_message = content_piece["text"]["value"]
+                                                        await context.bot.edit_message_text(assistant_message, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id, parse_mode=parse_mode)
+                                                        return
+                                else:
+                                    print(f"Error al recuperar los mensajes: {response.status}")
+                                    return None
+                        #return steps
+                    print(f"Esperando a que los pasos se completen... (Último paso en estado: {last_step_status})")
+                    #await update.message.reply_text(f"Esperando a que los pasos se completen... (Último paso en estado: {last_step_status})")
+                    await asyncio.sleep(2)  # Espera 2 segundos antes de volver a consultar
+        
+    except aiohttp.ClientError as e:
+        print(f"Se ha producido un error del cliente: {e}")
+        text = "🥲 Your request <b>doesn't comply</b> with OpenAI's usage policies.\nWhat did you write there, huh?"
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return None
+    
 
 async def new_dialog_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
