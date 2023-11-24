@@ -208,7 +208,7 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
         thread_id = db.get_user_attribute(user_id, "thread_id")
         db.create_message(thread_id,_message)
         run_id = db.create_run(thread_id)
-        await assistan_handle(update, context,thread_id,run_id)
+        await assistan_handle(update, context,thread_id,run_id,message=message)
         return
 
     async def message_handle_fn():
@@ -392,7 +392,9 @@ async def generate_image_handle(update: Update, context: CallbackContext, messag
         await update.message.chat.send_action(action="upload_photo")
         await update.message.reply_photo(image_url, parse_mode=ParseMode.HTML)
 
-async def assistan_handle(update: Update, context: CallbackContext, thread_id:str,run_id:str):
+async def assistan_handle(update: Update, context: CallbackContext, thread_id:str,run_id:str,message=None):
+    
+    _message = message or update.message.text
     
     # send placeholder message to user
     placeholder_message = await update.message.reply_text("...")
@@ -435,6 +437,13 @@ async def assistan_handle(update: Update, context: CallbackContext, thread_id:st
                                                         # Aquí tienes el texto enviado por el 'assistant'
                                                         assistant_message = content_piece["text"]["value"]
                                                         await context.bot.edit_message_text(assistant_message, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id, parse_mode=parse_mode)
+                                                        # update user data
+                                                        new_dialog_message = {"user": _message, "bot": assistant_message, "date": datetime.now()}
+                                                        db.set_dialog_messages(
+                                                            user_id,
+                                                            db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
+                                                            dialog_id=None
+                                                        )
                                                         return
                                 else:
                                     print(f"Error al recuperar los mensajes: {response.status}")
