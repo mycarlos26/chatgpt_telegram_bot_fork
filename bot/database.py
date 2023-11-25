@@ -17,8 +17,8 @@ if config.openai_api_base is not None:
 
 class Database:
     def __init__(self):
-        #self.client = MongoClient(config.mongodb_uri_atlas, server_api=ServerApi('1'))
-        self.client = pymongo.MongoClient(config.mongodb_uri)
+        self.client = pymongo.MongoClien(config.mongodb_uri_atlas, server_api=ServerApi('1'))
+        #self.client = pymongo.MongoClient(config.local)
         self.db = self.client["chatgpt_telegram_bot"]
         self.thread_id = ""
         self.user_collection = self.db["user"]

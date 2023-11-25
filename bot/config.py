@@ -24,6 +24,7 @@ image_size = config_yaml.get("image_size", "512x512")
 n_chat_modes_per_page = config_yaml.get("n_chat_modes_per_page", 5)
 mongodb_uri = f"mongodb://mongo:{config_env['MONGODB_PORT']}"
 mongodb_uri_atlas = config_env['URL_MONGO_ATLAS']
+local= config_env['local']
 
 # chat_modes
 with open(config_dir / "chat_modes.yml", 'r',encoding="utf-8") as f:
