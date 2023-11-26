@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 import openai
 import aiohttp
+import re
 
 import telegram
 from telegram import (
@@ -223,8 +224,7 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
             print(f"Error: No se pudo crear el run para el usuario {user_id}.")
             text = f"🥲 <b>Error: No se pudo crear el run para el usuario {user_id}.</b>"
             await update.message.reply_text(text, parse_mode=ParseMode.HTML)
-            return
-        
+            return    
         await assistan_handle(update, context,thread_id,run_id,message=message)
         return
 
@@ -457,7 +457,11 @@ async def assistan_handle(update: Update, context: CallbackContext, thread_id:st
                                                     for content_piece in message["content"]:
                                                         if content_piece["type"] == "text":
                                                                 # Aquí tienes el texto enviado por el 'assistant'
+                                                                #assistant_ = content_piece["text"]["value"]
+                                                                #texto_limpio = re.sub(r'\s*\n+\s*', ' ', assistant_).strip()
+                                                                #assistant_message = texto_limpio   
                                                                 assistant_message = content_piece["text"]["value"]
+                                                                #text_scapado = await escape_special_characters(assistant_message)                          
                                                                 await context.bot.edit_message_text(assistant_message, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id, parse_mode=parse_mode)
                                                                 # update user data
                                                                 new_dialog_message = {"user": _message, "bot": assistant_message, "date": datetime.now()}
@@ -472,6 +476,8 @@ async def assistan_handle(update: Update, context: CallbackContext, thread_id:st
                                             print(f"Error al recuperar los mensajes: {response.status}")
                                             return None
                                 #return steps
+                    # send typing action
+                    await update.message.chat.send_action(action="typing")   
                     print(f"Esperando a que los pasos se completen... (Último paso en estado: {last_step_status})")
                     #await update.message.reply_text(f"Esperando a que los pasos se completen... (Último paso en estado: {last_step_status})")
                     await asyncio.sleep(2)  # Espera 2 segundos antes de volver a consultar
@@ -482,6 +488,15 @@ async def assistan_handle(update: Update, context: CallbackContext, thread_id:st
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return None
     
+async def escape_special_characters(text):
+    # Lista de caracteres que deseas escapar
+    characters_to_escape = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    # Escapar todos los caracteres especiales con una barra invertida
+    # Reemplaza cada carácter con su versión escapada
+    for char in characters_to_escape:
+        # Usamos re.escape para escapar correctamente los caracteres que tienen significados especiales en expresiones regulares
+        text = text.replace(char, re.escape(char))
+    return text
 
 async def new_dialog_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)

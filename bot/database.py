@@ -225,7 +225,9 @@ class Database:
             'OpenAI-Beta': 'assistants=v1',
         }
         payload = {
-            "assistant_id": config.assistant_id
+            "assistant_id": config.assistant_id,
+            #"model":"gpt-4-1106-preview",
+            #"instructions":"El resultado los vas a mostrar utilizando etiquetas HTML, tales como <h1> para los titulos, <li> para los diferentes topicos de la leccion."
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=payload) as response:
