@@ -205,9 +205,26 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
         await generate_image_handle(update, context, message=message)
         return
     if chat_mode == "Jonathan_Goodman_Bot":
-        thread_id = db.get_user_attribute(user_id, "thread_id")
-        db.create_message(thread_id,_message)
-        run_id = db.create_run(thread_id)
+        thread_id = await db.get_user_attribute_asincrona(user_id, "thread_id")
+        if not thread_id:
+            print(f"Error: No se pudo obtener thread_id para el usuario {user_id}.")
+            text = f"🥲 <b>Error: No se pudo obtener thread_id para el usuario {user_id}.</b>"
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+            return
+        message_creation_response = await db.create_message(thread_id,_message)
+        if not message_creation_response:
+            print(f"Error: No se pudo  crear el mesnaje para el usuario {user_id}.")
+            text = f"🥲Error: No se pudo  crear el mesnaje para el usuario {user_id}.</b>"
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+            return
+        
+        run_id = await db.create_run(thread_id)
+        if not run_id:
+            print(f"Error: No se pudo crear el run para el usuario {user_id}.")
+            text = f"🥲 <b>Error: No se pudo crear el run para el usuario {user_id}.</b>"
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+            return
+        
         await assistan_handle(update, context,thread_id,run_id,message=message)
         return
 
@@ -420,35 +437,41 @@ async def assistan_handle(update: Update, context: CallbackContext, thread_id:st
             while True:
                 async with session.get(get_run_steps_url, headers=headers) as response:
                     steps = await response.json()
-                    last_step_status = steps["data"][-1]["status"]
-                    # Comprobar si el último paso está 'completed' o no 'in_progress'
-                    if last_step_status != "in_progress":
-                        async with aiohttp.ClientSession() as session:
-                             get_messages_url = f"https://api.openai.com/v1/threads/{thread_id}/messages"
-                             async with session.get(get_messages_url, headers=headers) as response:
-                                if response.status == 200:
-                                    messages = await response.json()
-                                    for message in messages["data"]:
-                                        # Filtrar mensajes que tengan el rol de 'assistant'
-                                        if message["role"] == "assistant":
-                                             # En caso de tener varios elementos en 'content', iterar sobre cada uno
-                                              for content_piece in message["content"]:
-                                                   if content_piece["type"] == "text":
-                                                        # Aquí tienes el texto enviado por el 'assistant'
-                                                        assistant_message = content_piece["text"]["value"]
-                                                        await context.bot.edit_message_text(assistant_message, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id, parse_mode=parse_mode)
-                                                        # update user data
-                                                        new_dialog_message = {"user": _message, "bot": assistant_message, "date": datetime.now()}
-                                                        db.set_dialog_messages(
-                                                            user_id,
-                                                            db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
-                                                            dialog_id=None
-                                                        )
-                                                        return
-                                else:
-                                    print(f"Error al recuperar los mensajes: {response.status}")
-                                    return None
-                        #return steps
+                    # Verificar que la clave "data" está presente y que es una lista con al menos un elemento
+                    last_step_status = "init"
+                    if "data" in steps and isinstance(steps["data"], list) and len(steps["data"]) > 0:
+                        last_step = steps["data"][-1]
+                        if "status" in last_step:
+                            last_step_status = last_step["status"]
+                            # Comprobar si el último paso está 'completed' o no 'in_progress'
+                            if last_step_status != "in_progress":
+                                async with aiohttp.ClientSession() as session:
+                                    get_messages_url = f"https://api.openai.com/v1/threads/{thread_id}/messages"
+                                    async with session.get(get_messages_url, headers=headers) as response:
+                                        if response.status == 200:
+                                            messages = await response.json()
+                                            for message in messages["data"]:
+                                                # Filtrar mensajes que tengan el rol de 'assistant'
+                                                if message["role"] == "assistant":
+                                                    # En caso de tener varios elementos en 'content', iterar sobre cada uno
+                                                    for content_piece in message["content"]:
+                                                        if content_piece["type"] == "text":
+                                                                # Aquí tienes el texto enviado por el 'assistant'
+                                                                assistant_message = content_piece["text"]["value"]
+                                                                await context.bot.edit_message_text(assistant_message, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id, parse_mode=parse_mode)
+                                                                # update user data
+                                                                new_dialog_message = {"user": _message, "bot": assistant_message, "date": datetime.now()}
+                                                                db.set_dialog_messages(
+                                                                    user_id,
+                                                                    db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
+                                                                    dialog_id=None
+                                                                )
+                                                                print(f"Se ha completado la ejecucio....El estatus : {last_step_status}")
+                                                                return
+                                        else:
+                                            print(f"Error al recuperar los mensajes: {response.status}")
+                                            return None
+                                #return steps
                     print(f"Esperando a que los pasos se completen... (Último paso en estado: {last_step_status})")
                     #await update.message.reply_text(f"Esperando a que los pasos se completen... (Último paso en estado: {last_step_status})")
                     await asyncio.sleep(2)  # Espera 2 segundos antes de volver a consultar

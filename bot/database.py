@@ -9,6 +9,8 @@ import requests
 import json
 import config
 import openai
+import aiohttp
+import motor.motor_asyncio
 
 # setup openai
 openai.api_key = config.openai_api_key
@@ -17,17 +19,30 @@ if config.openai_api_base is not None:
 
 class Database:
     def __init__(self):
-        #self.client = MongoClient(config.mongodb_uri_atlas, server_api=ServerApi('1'))
-        #self.client = MongoClient(config.local)
-        #self.client = MongoClient(config.mongodb_uri)
+       
+        #self.client = pymongo.MongoClient(config.local)
+        #self.cliend_asin = motor.motor_asyncio.AsyncIOMotorClient(config.local)
         self.client = pymongo.MongoClient(config.mongodb_uri)
+        self.cliend_asin = motor.motor_asyncio.AsyncIOMotorClient(config.mongodb_uri)
+        #self.client = MongoClient(config.mongodb_uri_atlas, server_api=ServerApi('1'))
         self.db = self.client["chatgpt_telegram_bot"]
+        self.db_asin = self.cliend_asin["chatgpt_telegram_bot"]
         self.thread_id = ""
         self.user_collection = self.db["user"]
+        self.user_collection_asin = self.db_asin["user"]
         self.dialog_collection = self.db["dialog"]
+        self.dialog_collection_asin = self.db_asin["dialog"]
 
     def check_if_user_exists(self, user_id: int, raise_exception: bool = False):
         if self.user_collection.count_documents({"_id": user_id}) > 0:
+            return True
+        else:
+            if raise_exception:
+                raise ValueError(f"User {user_id} does not exist")
+            else:
+                return False
+    async def check_if_user_exists_asin(self, user_id: int, raise_exception: bool = False):
+        if await self.user_collection_asin.count_documents({"_id": user_id}) > 0:
             return True
         else:
             if raise_exception:
@@ -102,7 +117,16 @@ class Database:
             return None
 
         return user_dict[key]
+    
+    async def get_user_attribute_asincrona(self, user_id: int, key: str):
+        await self.check_if_user_exists_asin(user_id, raise_exception=True)
+        user_dict = await self.user_collection_asin.find_one({"_id": user_id})
 
+        if key not in user_dict:
+            return None
+
+        return user_dict[key]
+    
     def set_user_attribute(self, user_id: int, key: str, value: Any):
         self.check_if_user_exists(user_id, raise_exception=True)
         self.user_collection.update_one({"_id": user_id}, {"$set": {key: value}})
@@ -166,7 +190,7 @@ class Database:
 
     
     @staticmethod
-    def create_message(thread_id, content):
+    async def create_message(thread_id, content):
         url = f"https://api.openai.com/v1/threads/{thread_id}/messages"
         
         headers = {
@@ -180,21 +204,19 @@ class Database:
             "role": "user",
             "content": content
         }
-        
-        # Realiza la petición POST
-        response =  requests.post(url, headers=headers, json=payload)
-        
-        if response.ok:
-            # Convertimos la respuesta en formato JSON a un diccionario de Python
-            response_data = response.json()
-            # Retornamos toda la respuesta o el valor específico que necesites
-            return response_data
-        else:
-            # Manejamos la respuesta en caso de error
-            print(f"Error al crear el mensaje: {response.status_code}")
-            return None
+        async with aiohttp.ClientSession() as session:
+             async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    response_data = await response.json()
+                    return response_data.get('id')
+                else:
+                    print(f"Error al crear el mensaje: {response.status}")
+                    response_text = await response.text()
+                    print(f"Detalle del error: {response_text}")
+                    return None
+
     @staticmethod
-    def create_run(thread_id):
+    async def create_run(thread_id):
         url = f"https://api.openai.com/v1/threads/{thread_id}/runs"
         
         headers = {
@@ -205,16 +227,13 @@ class Database:
         payload = {
             "assistant_id": config.assistant_id
         }
-        
-        # Realiza la petición POST
-        response = requests.post(url, headers=headers, json=payload)
-        
-        if response.ok:
-            # Convertimos la respuesta en formato JSON a un diccionario de Python
-            response_data = response.json()
-            # Retornamos toda la respuesta o el valor específico que necesites
-            return response_data.get('id')
-        else:
-            # Manejamos la respuesta en caso de error
-            print(f"Error al crear el run: {response.status_code}")
-            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    response_data = await response.json()
+                    return response_data.get('id')
+                else:
+                    print(f"Error al crear el run: {response.status}")
+                    response_text = await response.text()
+                    print(f"Detalle del error: {response_text}")
+                    return None

@@ -31,7 +31,6 @@ Jonathan_Goodman_Bot:
   welcome_message: 🇺🇸 Hola soy tu profesor personalizado de Ingles.
   prompt_start: | 
     Eres un reconocido profesor de ingles para niños.
-    
   parse_mode: html
 
 startup_idea_generator:
